@@ -1,0 +1,156 @@
+Report - HW4
+CSE 508 Network Security
+
+Name: Abhishek Bhattad
+SBU ID: 113277131
+
+This report is regarding the successful completion of Homework 4 Plugboard Proxy. Along with this report, I am submitting pbproxy.go (source code) and pwdfile (contains passphare to be used for key generation).
+The go version used is go1.16.2.
+
+Below are the command line arguments/flags which need to be supported. The program doesn’t necessarily require the sequence of arguments and will run even if the arguments are shuffled. If an invalid argument is provided it will throw an error.
+Note: All the commands are run in root user
+
+-l listenport will differentiate between server side and client side proxy
+
+Part A ==> Server side execution (Reverse-side proxy):
+
+go run pbproxy.go -l listenport -p pwdfile destination port
+
+-l listenport: if provided with the -l flag, it will act as a server side reverse proxy and start listening on "listenport" and relay all the traffic to destination:port.
+
+-p pwdfile: pwdifle contains passphrase that it is being used to generate key and do encryption and decryption. Both nonce and salt are generated at random for each data transfer and is shared as part of message so that server/client can decrypt it successfully. There is no hardcoding of nonce and salt involved. It should be same on both the client and server otherwise the authentication will fail. Empty passphare will also work.
+
+Below is the code implementation flow:
+	1. The arguments are read at the start and filtered based on how many arguments are provided.
+	2. Server will start continuous listener on listenport.
+	3. If any connection comes on listenport, it will create a dial connection to destination:port, decrypt the data and redirect all the traffic to dial connection. For multiple connections, I have used go routine functionality.
+	4. I have used goframe library to send data length as part of data append to start of data. From buffer, data length bytes will be read which will prevent any extra padding in the buffer to be read.
+	5. If the port is not 22 (e.g. 12345), you need to first start a listen server (nc -l -p 12345). If multiple clients need to connect, then multiple continuous listener should be setup.
+	6. Bidirectional communication: Data can be sent from standard input from 12345 to client. It will be encrypted from 12345 and decrypted at the client side.
+	
+
+PART B ==>  Client side execution.
+
+1. go run pbproxy.go -p pwdfile destination port
+2. ssh -o "ProxyCommand  go run pbproxy.go -p pwdfile destination port" localhost
+
+-p pwdfile: pwdifle contains passphrase that it is being used to generate key and do encryption and decryption. Both nonce and salt are generated at random for each data transfer and is shared as part of message so that server/client can decrypt it successfully. There is no hardcoding of nonce and salt involved. It should be same on both the client and server otherwise the authentication will fail. Empty passphare will also work.
+
+destination port: client connects (dial) to destination:port
+
+Below is the code implementation flow:
+	1. The arguments are read at the start and filtered based on how many arguments are provided.
+	2. Client will connect to destination:port
+	3. I have used goframe library to send data length as part of data append to start of data. From buffer, data length bytes will be read which will prevent any extra padding in the buffer to be read.
+	4. In example 1 above, client can send input from standard input, it will be encrypted and sent to server. Data length field is append at start of data (which in itself contains salt, nonce appended).
+	5. In example 2 above, client creates a tunnel to server and executes a ssh localhost command on the server which will connect client to server via ssh.
+	6. Bidirectional communication: Encrypted data sent from server will be decrypted at the client side.
+
+References:
+https://github.com/dddpaul/gonc/blob/master/tcp/tcp.go
+https://golang.org/src/io/io.go
+https://github.com/smallnest/goframe
+https://medium.com/@yanzay/implementing-simple-netcat-using-go-bbab37507635
+https://www.melvinvivas.com/how-to-encrypt-and-decrypt-data-using-aes/
+https://pkg.go.dev/golang.org/x/crypto/pbkdf2#Key
+
+Examples:
+
+Example 1:
+
+A. Server-side:
+
+root@ubuntu:/home/abhattad4/Downloads/hw4# go run pbproxy.go -p pwdfile -l 2222 localhost 22
+2021/04/30 22:27:30 Filename: pwdfile
+2021/04/30 22:27:30 PortToListen: 2222
+2021/04/30 22:27:30 HostToConnect: localhost
+2021/04/30 22:27:30 PortToConnect: 22
+2021/04/30 22:27:30 Started listen on tcp :2222
+2021/04/30 22:27:58 [192.168.29.131:45018]: Connection created
+2021/04/30 22:28:52 [192.168.29.131:45020]: Connection created
+
+B. Client 1:
+
+┌──(root💀kali)-[/home/abhattad4/Downloads]
+└─# ssh -o "ProxyCommand go run pbproxy.go 192.168.29.128 2222 -p pwdfile" abhattad4@localhost
+2021/04/30 22:27:59 Filename: pwdfile
+2021/04/30 22:27:59 PortToListen: 
+2021/04/30 22:27:59 HostToConnect: 192.168.29.128
+2021/04/30 22:27:59 PortToConnect: 2222
+abhattad4@localhost's password: 
+Welcome to Ubuntu 20.04.2 LTS (GNU/Linux 5.8.0-48-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+86 updates can be installed immediately.
+0 of these updates are security updates.
+To see these additional updates run: apt list --upgradable
+
+Your Hardware Enablement Stack (HWE) is supported until April 2025.
+*** System restart required ***
+Last login: Fri Apr 30 22:24:37 2021 from 127.0.0.1
+
+Client 2:
+
+┌──(root💀kali)-[/home/abhattad4/Downloads]
+└─# ssh -o "ProxyCommand go run pbproxy.go 192.168.29.128 2222 -p pwdfile" abhattad4@localhost
+2021/04/30 22:28:53 Filename: pwdfile
+2021/04/30 22:28:53 PortToListen: 
+2021/04/30 22:28:53 HostToConnect: 192.168.29.128
+2021/04/30 22:28:53 PortToConnect: 2222
+abhattad4@localhost's password: 
+Welcome to Ubuntu 20.04.2 LTS (GNU/Linux 5.8.0-48-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+86 updates can be installed immediately.
+0 of these updates are security updates.
+To see these additional updates run: apt list --upgradable
+
+Your Hardware Enablement Stack (HWE) is supported until April 2025.
+*** System restart required ***
+Last login: Fri Apr 30 22:28:07 2021 from 127.0.0.1
+abhattad4@ubuntu:~$ 
+
+root@ubuntu:~# netstat -anp |grep EST
+tcp6       0      0 192.168.29.128:2222     192.168.29.131:45020    ESTABLISHED 113711/pbproxy      
+tcp6       0      0 192.168.29.128:2222     192.168.29.131:45018    ESTABLISHED 113711/pbproxy   
+tcp        0      0 127.0.0.1:38082         127.0.0.1:22            ESTABLISHED 113711/pbproxy
+
+Example 2:
+
+A. Server-side:
+root@ubuntu:/home/abhattad4/Downloads/hw4# go run pbproxy.go -p pwdfile -l 2222 localhost 12345
+2021/04/30 22:32:13 Filename: pwdfile
+2021/04/30 22:32:13 PortToListen: 2222
+2021/04/30 22:32:13 HostToConnect: localhost
+2021/04/30 22:32:13 PortToConnect: 12345
+2021/04/30 22:32:13 Started listen on tcp :2222
+2021/04/30 22:33:00 [192.168.29.131:45022]: Connection created
+
+Listener:
+root@ubuntu:~# nc -l -p 12345
+netsec
+testing
+now from server
+netsec
+testing
+
+B. Client:
+
+┌──(root💀kali)-[/home/abhattad4/Downloads]
+└─# go run pbproxy.go 192.168.29.128 2222 -p pwdfile   
+2021/04/30 22:33:01 Filename: pwdfile
+2021/04/30 22:33:01 PortToListen: 
+2021/04/30 22:33:01 HostToConnect: 192.168.29.128
+2021/04/30 22:33:01 PortToConnect: 2222
+netsec
+testing
+now from server
+netsec
+testing
+
